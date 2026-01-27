@@ -1,0 +1,6 @@
+a = int(input())
+b = int(input())
+c = round(a // b)
+d = float(a / b)
+print(c)
+print(d)
