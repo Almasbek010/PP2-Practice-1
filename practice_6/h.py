@@ -1,0 +1,5 @@
+n = int(input())
+numbers = map(int, input().split())
+distinct = set(numbers)
+ordered = sorted(distinct)
+print(*(ordered))
