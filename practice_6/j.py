@@ -1,0 +1,5 @@
+n = int(input())
+numbers = map(int, input().split())
+truthy = map(bool, numbers)
+result = sum(truthy)
+print(result)
