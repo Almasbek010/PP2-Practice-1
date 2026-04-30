@@ -1,0 +1,553 @@
+import json
+import csv
+import os
+from datetime import date
+from connect import get_connection
+
+PAGE_SIZE = 5
+
+
+
+def clear():
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def print_line():
+    print("─" * 60)
+
+
+def input_optional(prompt):
+    val = input(prompt).strip()
+    return val if val else None
+
+
+def get_groups():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name FROM groups ORDER BY name")
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return rows
+
+
+def get_group_id(name):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM groups WHERE name = %s", (name,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return row[0] if row else None
+
+
+def print_contact(row, phones=None):
+    cid, name, email, birthday, grp = row
+    print(f"  ID: {cid}")
+    print(f"  Имя: {name}")
+    print(f"  Email: {email or '—'}")
+    print(f"  День рождения: {birthday or '—'}")
+    print(f"  Группа: {grp or '—'}")
+    if phones:
+        for ph, tp in phones:
+            print(f"  {ph} ({tp})")
+    print_line()
+
+
+def get_phones_for(contact_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT phone, type FROM phones WHERE contact_id = %s", (contact_id,)
+    )
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return rows
+
+
+
+def add_contact():
+    clear()
+    print("═══ Добавить контакт ═══")
+    name = input("Имя: ").strip()
+    if not name:
+        print("Имя не может быть пустым.")
+        return
+
+    email    = input_optional("Email (Enter — пропустить): ")
+    birthday = input_optional("День рождения (ГГГГ-ММ-ДД, Enter — пропустить): ")
+
+    groups = get_groups()
+    print("\nГруппы:")
+    for gid, gname in groups:
+        print(f"  {gid}. {gname}")
+    g_input = input_optional("Номер группы (Enter — без группы): ")
+    group_id = int(g_input) if g_input and g_input.isdigit() else None
+
+    phone = input_optional("Телефон (Enter — пропустить): ")
+    ptype = None
+    if phone:
+        ptype = input("Тип (home / work / mobile): ").strip() or "mobile"
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO contacts (name, email, birthday, group_id)
+            VALUES (%s, %s, %s, %s) RETURNING id
+            """,
+            (name, email, birthday, group_id)
+        )
+        contact_id = cur.fetchone()[0]
+
+        if phone:
+            cur.execute(
+                "INSERT INTO phones (contact_id, phone, type) VALUES (%s, %s, %s)",
+                (contact_id, phone, ptype)
+            )
+        conn.commit()
+        print(f"\nКонтакт «{name}» добавлен (id={contact_id}).")
+    except Exception as e:
+        conn.rollback()
+        print(f"Ошибка: {e}")
+    finally:
+        cur.close(); conn.close()
+    input("\nEnter для продолжения...")
+
+
+
+def search_contacts():
+    clear()
+    print("═══ Поиск контактов ═══")
+    query = input("Введи имя, email или телефон: ").strip()
+    if not query:
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM search_contacts(%s)", (query,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    if not rows:
+        print("Ничего не найдено.")
+    else:
+        print(f"\nНайдено: {len(rows)}")
+        print_line()
+        for row in rows:
+            phones = get_phones_for(row[0])
+            print_contact(row, phones)
+    input("\nEnter для продолжения...")
+
+
+def filter_by_group():
+    clear()
+    print("═══ Фильтр по группе ═══")
+    groups = get_groups()
+    for gid, gname in groups:
+        print(f"  {gid}. {gname}")
+    g_input = input("Номер группы: ").strip()
+    if not g_input.isdigit():
+        return
+    group_id = int(g_input)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.id, c.name, c.email, c.birthday, g.name
+        FROM contacts c
+        LEFT JOIN groups g ON g.id = c.group_id
+        WHERE c.group_id = %s
+        ORDER BY c.name
+        """,
+        (group_id,)
+    )
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    if not rows:
+        print("Контактов в этой группе нет.")
+    else:
+        print_line()
+        for row in rows:
+            phones = get_phones_for(row[0])
+            print_contact(row, phones)
+    input("\nEnter для продолжения...")
+
+
+def search_by_email():
+    clear()
+    print("═══ Поиск по Email ═══")
+    query = input("Часть email (например 'gmail'): ").strip()
+    if not query:
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.id, c.name, c.email, c.birthday, g.name
+        FROM contacts c
+        LEFT JOIN groups g ON g.id = c.group_id
+        WHERE c.email ILIKE %s
+        ORDER BY c.name
+        """,
+        (f"%{query}%",)
+    )
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    if not rows:
+        print("Ничего не найдено.")
+    else:
+        print_line()
+        for row in rows:
+            phones = get_phones_for(row[0])
+            print_contact(row, phones)
+    input("\nEnter для продолжения...")
+
+
+def sort_contacts():
+    clear()
+    print("═══ Сортировка контактов ═══")
+    print("  1. По имени")
+    print("  2. По дню рождения")
+    print("  3. По дате добавления")
+    choice = input("Выбери: ").strip()
+
+    order = {
+        "1": "c.name",
+        "2": "c.birthday",
+        "3": "c.created_at",
+    }.get(choice, "c.name")
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT c.id, c.name, c.email, c.birthday, g.name
+        FROM contacts c
+        LEFT JOIN groups g ON g.id = c.group_id
+        ORDER BY {order}
+        """
+    )
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    print_line()
+    for row in rows:
+        phones = get_phones_for(row[0])
+        print_contact(row, phones)
+    input("\nEnter для продолжения...")
+
+
+def paginated_view():
+    clear()
+    offset = 0
+
+    while True:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM get_contacts_page(%s, %s)", (PAGE_SIZE, offset))
+        rows = cur.fetchall()
+        cur.execute("SELECT COUNT(*) FROM contacts")
+        total = cur.fetchone()[0]
+        cur.close(); conn.close()
+
+        clear()
+        page = offset // PAGE_SIZE + 1
+        max_page = (total + PAGE_SIZE - 1) // PAGE_SIZE or 1
+        print(f"═══ Все контакты — Страница {page}/{max_page} ═══")
+        print_line()
+
+        if not rows:
+            print("  Контактов нет.")
+        else:
+            for row in rows:
+                phones = get_phones_for(row[0])
+                print_contact(row, phones)
+
+        print("  [n] Следующая   [p] Предыдущая   [q] Выход")
+        cmd = input(">>> ").strip().lower()
+
+        if cmd == "n":
+            if offset + PAGE_SIZE < total:
+                offset += PAGE_SIZE
+        elif cmd == "p":
+            if offset > 0:
+                offset -= PAGE_SIZE
+        elif cmd == "q":
+            break
+
+
+
+def export_to_json():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.id, c.name, c.email,
+               c.birthday::text, g.name AS grp
+        FROM contacts c
+        LEFT JOIN groups g ON g.id = c.group_id
+        ORDER BY c.name
+        """
+    )
+    contacts = cur.fetchall()
+
+    result = []
+    for cid, name, email, birthday, grp in contacts:
+        phones = get_phones_for(cid)
+        result.append({
+            "name":     name,
+            "email":    email,
+            "birthday": birthday,
+            "group":    grp,
+            "phones":   [{"phone": ph, "type": tp} for ph, tp in phones],
+        })
+
+    cur.close(); conn.close()
+
+    with open("contacts.json", "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=4)
+
+    print(f"Экспортировано {len(result)} контактов в contacts.json")
+    input("\nEnter для продолжения...")
+
+
+def import_from_json():
+    if not os.path.exists("contacts.json"):
+        print("Файл contacts.json не найден.")
+        input("\nEnter для продолжения...")
+        return
+
+    with open("contacts.json", encoding="utf-8") as f:
+        data = json.load(f)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    added = skipped = updated = 0
+
+    for item in data:
+        name = item.get("name", "").strip()
+        if not name:
+            continue
+
+        cur.execute("SELECT id FROM contacts WHERE name = %s", (name,))
+        existing = cur.fetchone()
+
+        if existing:
+            print(f"\n Контакт «{name}» уже есть.")
+            action = input("  [s] Пропустить  [o] Перезаписать: ").strip().lower()
+            if action != "o":
+                skipped += 1
+                continue
+            group_id = get_group_id(item.get("group")) if item.get("group") else None
+            cur.execute(
+                """
+                UPDATE contacts
+                SET email = %s, birthday = %s, group_id = %s
+                WHERE id = %s
+                """,
+                (item.get("email"), item.get("birthday"), group_id, existing[0])
+            )
+            cur.execute("DELETE FROM phones WHERE contact_id = %s", (existing[0],))
+            contact_id = existing[0]
+            updated += 1
+        else:
+            group_id = get_group_id(item.get("group")) if item.get("group") else None
+            cur.execute(
+                """
+                INSERT INTO contacts (name, email, birthday, group_id)
+                VALUES (%s, %s, %s, %s) RETURNING id
+                """,
+                (name, item.get("email"), item.get("birthday"), group_id)
+            )
+            contact_id = cur.fetchone()[0]
+            added += 1
+
+        for ph in item.get("phones", []):
+            cur.execute(
+                "INSERT INTO phones (contact_id, phone, type) VALUES (%s, %s, %s)",
+                (contact_id, ph.get("phone"), ph.get("type"))
+            )
+
+    conn.commit()
+    cur.close(); conn.close()
+    print(f"\nДобавлено: {added}, обновлено: {updated}, пропущено: {skipped}")
+    input("\nEnter для продолжения...")
+
+
+def import_from_csv():
+    if not os.path.exists("contacts.csv"):
+        print("Файл contacts.csv не найден.")
+        input("\nEnter для продолжения...")
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+    added = skipped = 0
+
+    with open("contacts.csv", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            name = row.get("name", "").strip()
+            if not name:
+                continue
+
+            cur.execute("SELECT id FROM contacts WHERE name = %s", (name,))
+            if cur.fetchone():
+                print(f"   Пропускаем «{name}» — уже существует.")
+                skipped += 1
+                continue
+
+            group_id = get_group_id(row.get("group")) if row.get("group") else None
+            cur.execute(
+                """
+                INSERT INTO contacts (name, email, birthday, group_id)
+                VALUES (%s, %s, %s, %s) RETURNING id
+                """,
+                (
+                    name,
+                    row.get("email") or None,
+                    row.get("birthday") or None,
+                    group_id
+                )
+            )
+            contact_id = cur.fetchone()[0]
+
+            phone = row.get("phone", "").strip()
+            ptype = row.get("type", "mobile").strip() or "mobile"
+            if phone:
+                cur.execute(
+                    "INSERT INTO phones (contact_id, phone, type) VALUES (%s, %s, %s)",
+                    (contact_id, phone, ptype)
+                )
+            added += 1
+
+    conn.commit()
+    cur.close(); conn.close()
+    print(f"\nДобавлено: {added}, пропущено: {skipped}")
+    input("\nEnter для продолжения...")
+
+
+
+def call_add_phone():
+    clear()
+    print("═══ Добавить телефон контакту ═══")
+    name  = input("Имя контакта: ").strip()
+    phone = input("Телефон: ").strip()
+    ptype = input("Тип (home / work / mobile): ").strip() or "mobile"
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("CALL add_phone(%s, %s, %s)", (name, phone, ptype))
+        conn.commit()
+        print(f"Телефон добавлен.")
+    except Exception as e:
+        conn.rollback()
+        print(f"Ошибка: {e}")
+    finally:
+        cur.close(); conn.close()
+    input("\nEnter для продолжения...")
+
+
+def call_move_to_group():
+    clear()
+    print("═══ Переместить контакт в группу ═══")
+    name  = input("Имя контакта: ").strip()
+    group = input("Название группы: ").strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("CALL move_to_group(%s, %s)", (name, group))
+        conn.commit()
+        print(f"Контакт перемещён в группу «{group}».")
+    except Exception as e:
+        conn.rollback()
+        print(f"Ошибка: {e}")
+    finally:
+        cur.close(); conn.close()
+    input("\nEnter для продолжения...")
+
+
+def delete_contact():
+    clear()
+    print("═══ Удалить контакт ═══")
+    name = input("Имя контакта: ").strip()
+    confirm = input(f"Удалить «{name}»? (да/нет): ").strip().lower()
+    if confirm != "да":
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM contacts WHERE name = %s", (name,))
+        if cur.rowcount:
+            conn.commit()
+            print(f"Контакт «{name}» удалён.")
+        else:
+            print(f"Контакт «{name}» не найден.")
+    except Exception as e:
+        conn.rollback()
+        print(f"Ошибка: {e}")
+    finally:
+        cur.close(); conn.close()
+    input("\nEnter для продолжения...")
+
+
+
+def main():
+    while True:
+        clear()
+        print("╔══════════════════════════════════════╗")
+        print("║         ТЕЛЕФОННАЯ КНИГА             ║")
+        print("╠══════════════════════════════════════╣")
+        print("║  1. Добавить контакт                 ║")
+        print("║  2. Все контакты (постранично)       ║")
+        print("║  3. Поиск (имя / email / телефон)    ║")
+        print("║  4. Фильтр по группе                 ║")
+        print("║  5. Поиск по email                   ║")
+        print("║  6. Сортировка контактов             ║")
+        print("║───────────────────────────────────── ║")
+        print("║  7. Добавить телефон контакту        ║")
+        print("║  8. Переместить в группу             ║")
+        print("║  9. Удалить контакт                  ║")
+        print("║───────────────────────────────────── ║")
+        print("║  10. Экспорт в JSON                  ║")
+        print("║  11. Импорт из JSON                  ║")
+        print("║  12. Импорт из CSV                   ║")
+        print("║───────────────────────────────────── ║")
+        print("║  0. Выход                            ║")
+        print("╚══════════════════════════════════════╝")
+
+        choice = input(">>> ").strip()
+
+        actions = {
+            "1":  add_contact,
+            "2":  paginated_view,
+            "3":  search_contacts,
+            "4":  filter_by_group,
+            "5":  search_by_email,
+            "6":  sort_contacts,
+            "7":  call_add_phone,
+            "8":  call_move_to_group,
+            "9":  delete_contact,
+            "10": export_to_json,
+            "11": import_from_json,
+            "12": import_from_csv,
+        }
+
+        if choice == "0":
+            print("До свидания!")
+            break
+        elif choice in actions:
+            actions[choice]()
+        else:
+            print("Неверный выбор.")
+
+
+if __name__ == "__main__":
+    main()

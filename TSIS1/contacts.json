@@ -1,0 +1,150 @@
+[
+    {
+        "name": "Aibek Seitkali",
+        "email": "aibek@gmail.com",
+        "birthday": "1995-03-15",
+        "group": "Friend",
+        "phones": [
+            {
+                "phone": "+77011234567",
+                "type": "mobile"
+            }
+        ]
+    },
+    {
+        "name": "Ainur Nurova",
+        "email": "ainur@gmail.com",
+        "birthday": "2000-01-30",
+        "group": "Friend",
+        "phones": [
+            {
+                "phone": "+77073334455",
+                "type": "mobile"
+            }
+        ]
+    },
+    {
+        "name": "Daniyar Akhmetov",
+        "email": "daniyar@mail.ru",
+        "birthday": "1988-11-05",
+        "group": "Family",
+        "phones": [
+            {
+                "phone": "+77051112233",
+                "type": "home"
+            }
+        ]
+    },
+    {
+        "name": "Gulnara Ospanova",
+        "email": "gulnara@gmail.com",
+        "birthday": "1993-08-12",
+        "group": "Family",
+        "phones": [
+            {
+                "phone": "+77014445566",
+                "type": "home"
+            }
+        ]
+    },
+    {
+        "name": "Madina Karimova",
+        "email": "madina@work.kz",
+        "birthday": "1991-12-25",
+        "group": "Work",
+        "phones": [
+            {
+                "phone": "+77048889900",
+                "type": "work"
+            }
+        ]
+    },
+    {
+        "name": "Mansur Seitkali",
+        "email": "aibek@gmail.com",
+        "birthday": "1995-03-15",
+        "group": "Friend",
+        "phones": [
+            {
+                "phone": "+77011234567",
+                "type": "mobile"
+            },
+            {
+                "phone": "+77071112233",
+                "type": "home"
+            }
+        ]
+    },
+    {
+        "name": "Marat Seilov",
+        "email": "marat@company.kz",
+        "birthday": "1985-05-18",
+        "group": "Work",
+        "phones": [
+            {
+                "phone": "+77026667788",
+                "type": "work"
+            }
+        ]
+    },
+    {
+        "name": "Sultan",
+        "email": null,
+        "birthday": "2006-05-30",
+        "group": "Friend",
+        "phones": [
+            {
+                "phone": "87071011111",
+                "type": "mobile"
+            }
+        ]
+    },
+    {
+        "name": "Timur Djaksybekov",
+        "email": "timur@outlook.com",
+        "birthday": "1997-04-03",
+        "group": "Friend",
+        "phones": [
+            {
+                "phone": "+77035556677",
+                "type": "mobile"
+            }
+        ]
+    },
+    {
+        "name": "Zarina Bekova",
+        "email": "zarina@work.kz",
+        "birthday": "1990-07-22",
+        "group": "Work",
+        "phones": [
+            {
+                "phone": "+77029876543",
+                "type": "work"
+            }
+        ]
+    },
+    {
+        "name": "Алмас",
+        "email": null,
+        "birthday": "2006-11-11",
+        "group": "Friend",
+        "phones": [
+            {
+                "phone": "87777777777",
+                "type": "mobile"
+            }
+        ]
+    },
+    {
+        "name": "Алмас",
+        "email": null,
+        "birthday": "2006-11-11",
+        "group": "Friend",
+        "phones": [
+            {
+                "phone": "87777777777",
+                "type": "mobile"
+            }
+        ]
+    }
+]
