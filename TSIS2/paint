@@ -1,0 +1,285 @@
+import pygame
+import sys
+from datetime import datetime
+
+from tools import (
+    PencilTool, LineTool, RectTool, SquareTool,
+    CircleTool, EraserTool, FillTool,
+    RightTriangleTool, RhombusTool,
+)
+
+WINDOW_W   = 1100
+WINDOW_H   = 700
+TOOLBAR_W  = 160
+CANVAS_W   = WINDOW_W - TOOLBAR_W
+CANVAS_H   = WINDOW_H
+
+BG_COLOR      = (240, 240, 240)
+CANVAS_COLOR  = (255, 255, 255)
+SELECTED_BG   = (180, 210, 255)
+TEXT_COLOR    = (30, 30, 30)
+DIVIDER_COLOR = (180, 180, 180)
+
+PALETTE = [
+    (0,   0,   0),    # чёрный
+    (255, 255, 255),  # белый
+    (255, 0,   0),    # красный
+    (0,   180, 0),    # зелёный
+    (0,   0,   255),  # синий
+    (255, 255, 0),    # жёлтый
+    (255, 140, 0),    # оранжевый
+    (160, 0,   200),  # фиолетовый
+    (0,   200, 200),  # голубой
+    (139, 69,  19),   # коричневый
+    (255, 182, 193),  # розовый
+    (128, 128, 128),  # серый
+]
+
+BRUSH_SIZES = [2, 5, 10]
+
+
+def make_toolbar_button(label, y, selected=False):
+    return {"label": label, "y": y, "selected": selected}
+
+
+def draw_toolbar(surface, font, small_font, active_tool, active_color,
+                 active_size, color_rects, size_rects, tool_rects):
+    pygame.draw.rect(surface, BG_COLOR, (0, 0, TOOLBAR_W, WINDOW_H))
+    pygame.draw.line(surface, DIVIDER_COLOR,
+                     (TOOLBAR_W, 0), (TOOLBAR_W, WINDOW_H), 2)
+
+    title = font.render("Paint", True, (30, 30, 200))
+    surface.blit(title, (10, 8))
+
+    tools_list = [
+        ("pencil",   "Карандаш"),
+        ("line",     "Линия"),
+        ("rect",     "Прямоугол."),
+        ("square",   "Квадрат"),
+        ("circle",   "Круг"),
+        ("rtriangle","Тр. прямоуг"),
+        ("rhombus",  "Ромб"),
+        ("fill",     "Заливка"),
+        ("text",     "Текст"),
+        ("eraser",   "Ластик"),
+    ]
+
+    tool_rects.clear()
+    y = 45
+    surface.blit(small_font.render("— Инструменты —", True, (100, 100, 100)), (8, y))
+    y += 18
+
+    for key, label in tools_list:
+        rect = pygame.Rect(5, y, TOOLBAR_W - 10, 30)
+        bg = SELECTED_BG if active_tool == key else BG_COLOR
+        pygame.draw.rect(surface, bg, rect, border_radius=5)
+        if active_tool == key:
+            pygame.draw.rect(surface, (100, 150, 255), rect, 2, border_radius=5)
+        lbl = small_font.render(label, True, TEXT_COLOR)
+        surface.blit(lbl, (rect.x + 6, rect.y + 7))
+        tool_rects[key] = rect
+        y += 33
+
+    y += 5
+    surface.blit(small_font.render("— Размер кисти —", True, (100, 100, 100)), (8, y))
+    y += 18
+    size_labels = ["1 Малый (2px)", "2 Средний (5px)", "3 Большой (10px)"]
+    size_rects.clear()
+    for i, (sz, lbl) in enumerate(zip(BRUSH_SIZES, size_labels)):
+        rect = pygame.Rect(5, y, TOOLBAR_W - 10, 26)
+        bg = SELECTED_BG if active_size == sz else BG_COLOR
+        pygame.draw.rect(surface, bg, rect, border_radius=4)
+        if active_size == sz:
+            pygame.draw.rect(surface, (100, 150, 255), rect, 2, border_radius=4)
+        surface.blit(small_font.render(lbl, True, TEXT_COLOR), (rect.x + 6, rect.y + 5))
+        size_rects[i] = rect
+        y += 29
+
+    y += 5
+    surface.blit(small_font.render("— Цвет —", True, (100, 100, 100)), (8, y))
+    y += 18
+    color_rects.clear()
+    cols = 4
+    cell = 28
+    for i, col in enumerate(PALETTE):
+        cx = 8 + (i % cols) * (cell + 4)
+        cy = y + (i // cols) * (cell + 4)
+        rect = pygame.Rect(cx, cy, cell, cell)
+        pygame.draw.rect(surface, col, rect)
+        border = (0, 0, 0) if col != active_color else (255, 100, 0)
+        bw = 1 if col != active_color else 3
+        pygame.draw.rect(surface, border, rect, bw)
+        color_rects[i] = rect
+
+    cy2 = y + ((len(PALETTE) - 1) // cols + 1) * (cell + 4) + 4
+    pygame.draw.rect(surface, active_color, (8, cy2, 40, 24))
+    pygame.draw.rect(surface, (0, 0, 0), (8, cy2, 40, 24), 1)
+    surface.blit(small_font.render("Цвет", True, TEXT_COLOR), (55, cy2 + 4))
+
+
+
+class TextSession:
+    def __init__(self, pos, font):
+        self.pos   = pos
+        self.text  = ""
+        self.font  = font
+        self.active = True
+
+    def add_char(self, char):
+        self.text += char
+
+    def backspace(self):
+        self.text = self.text[:-1]
+
+    def draw_cursor(self, surface, color):
+        surf = self.font.render(self.text + "|", True, color)
+        surface.blit(surf, self.pos)
+
+    def commit(self, canvas, color):
+        if self.text:
+            surf = self.font.render(self.text, True, color)
+            canvas.blit(surf, self.pos)
+
+
+def main():
+    pygame.init()
+    screen = pygame.display.set_mode((WINDOW_W, WINDOW_H))
+    pygame.display.set_caption("🎨 Paint — TSIS 2")
+    clock = pygame.time.Clock()
+
+    font       = pygame.font.SysFont("Arial", 20, bold=True)
+    small_font = pygame.font.SysFont("Arial", 13)
+    text_font  = pygame.font.SysFont("Arial", 24)
+
+    canvas = pygame.Surface((CANVAS_W, CANVAS_H))
+    canvas.fill(CANVAS_COLOR)
+
+    active_tool  = "pencil"
+    active_color = (0, 0, 0)
+    active_size  = BRUSH_SIZES[0]
+
+    tools = {
+        "pencil":    PencilTool(),
+        "line":      LineTool(),
+        "rect":      RectTool(),
+        "square":    SquareTool(),
+        "circle":    CircleTool(),
+        "fill":      FillTool(),
+        "eraser":    EraserTool(),
+        "rtriangle": RightTriangleTool(),
+        "rhombus":   RhombusTool(),
+    }
+
+    drawing      = False
+    text_session = None
+
+    color_rects = {}
+    size_rects  = {}
+    tool_rects  = {}
+
+    def canvas_pos(mx, my):
+        return (mx - TOOLBAR_W, my)
+
+    def in_canvas(mx, my):
+        return mx > TOOLBAR_W
+
+    while True:
+        mx, my = pygame.mouse.get_pos()
+        cp = canvas_pos(mx, my)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            if event.type == pygame.KEYDOWN:
+
+                if text_session and text_session.active:
+                    if event.key == pygame.K_RETURN:
+                        text_session.commit(canvas, active_color)
+                        text_session = None
+                    elif event.key == pygame.K_ESCAPE:
+                        text_session = None
+                    elif event.key == pygame.K_BACKSPACE:
+                        text_session.backspace()
+                    elif event.unicode and event.unicode.isprintable():
+                        text_session.add_char(event.unicode)
+
+                elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    fname = f"canvas_{ts}.png"
+                    pygame.image.save(canvas, fname)
+                    print(f"Сохранено: {fname}")
+
+                elif event.key == pygame.K_1:
+                    active_size = BRUSH_SIZES[0]
+                elif event.key == pygame.K_2:
+                    active_size = BRUSH_SIZES[1]
+                elif event.key == pygame.K_3:
+                    active_size = BRUSH_SIZES[2]
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+
+                if not in_canvas(mx, my):
+                    for key, rect in tool_rects.items():
+                        if rect.collidepoint(mx, my):
+                            active_tool = key
+                            text_session = None
+
+                    for i, rect in size_rects.items():
+                        if rect.collidepoint(mx, my):
+                            active_size = BRUSH_SIZES[i]
+
+                    for i, rect in color_rects.items():
+                        if rect.collidepoint(mx, my):
+                            active_color = PALETTE[i]
+
+                else:
+                    if active_tool == "text":
+                        text_session = TextSession(cp, text_font)
+                    else:
+                        drawing = True
+                        tools[active_tool].on_mouse_down(
+                            canvas, cp, active_color, active_size
+                        )
+
+            if event.type == pygame.MOUSEMOTION:
+                if drawing and in_canvas(mx, my):
+                    tools[active_tool].on_mouse_move(
+                        canvas, cp, active_color, active_size
+                    )
+
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if drawing and in_canvas(mx, my):
+                    tools[active_tool].on_mouse_up(
+                        canvas, cp, active_color, active_size
+                    )
+                drawing = False
+
+        screen.fill(BG_COLOR)
+
+        draw_toolbar(screen, font, small_font,
+                     active_tool, active_color, active_size,
+                     color_rects, size_rects, tool_rects)
+
+        screen.blit(canvas, (TOOLBAR_W, 0))
+
+        if drawing and in_canvas(mx, my) and active_tool in tools:
+            preview = canvas.copy()
+            tools[active_tool].draw_preview(
+                preview, cp, active_color, active_size
+            )
+            screen.blit(preview, (TOOLBAR_W, 0))
+
+        if text_session and text_session.active:
+            tx = text_session.pos[0] + TOOLBAR_W
+            ty = text_session.pos[1]
+            surf = text_font.render(text_session.text + "|", True, active_color)
+            screen.blit(surf, (tx, ty))
+
+        pygame.display.flip()
+        clock.tick(60)
+
+
+if __name__ == "__main__":
+    main()
